@@ -188,7 +188,7 @@ Following the process described in~\citet{ieee2013semircpsp}, each tool undergoe
     \item \textbf{Company Qualification.} The fab's own qualifying engineers run recipe qualification and production-readiness tests, consuming additional test wafers, chemicals, and metrology time.
 \end{enumerate}
 
-In a modern fab ramp-up, approximately 00 tools must pass through this pipeline.
+In a modern fab ramp-up, approximately 2{,}000 tools must pass through this pipeline.
 Multiple tools compete for shared resources: contracted trades, supplier engineers, company qualifying engineers, test chambers, and metrology equipment are all capacity-limited.
 Consumable materials such as test wafers, specialty chemicals, and spare parts must be procured with lead times that can span weeks, and a qualification step cannot begin if its required materials have not arrived. Each qualification phase can be executed in multiple processing modes that trade off duration, resource consumption, material usage, and cost.
 
@@ -337,50 +337,6 @@ The resulting MIP has $O(|\calJ| \cdot |\calQ| \cdot H)$ binary scheduling varia
 \subsection{Column Generation Decomposition}
 
 Each \emph{column} $k \in \calK$ represents a complete feasible schedule and mode assignment $\{s_j^k, q_j^k\}_{j \in \calJ}$ with induced demands $D^k_{m,t}$ and total column cost $\mathrm{cost}_k$ (mode costs plus procurement cost computed by a greedy just-in-time planner).
-
-
-\paragraph{Restricted Master Problem (RMP), revised.}
-We restore procurement decisions $x_{m,t}, \delta_{m,t}, \mathrm{inv}_{m,t}$ as
-\emph{master-level} variables shared across columns (rather than folding
-procurement cost into a per-column heuristic), and link them to the schedule
-via the column-induced demand $D^k_{m,t}$:
-\begin{align}
-    \min_{\lambda, \bm{x}, \bm{\delta}, \bm{\mathrm{inv}}} \quad
-    & \sum_{k \in \calK} \gamma_k \, \lambda_k
-    + \sum_{m \in \calM} \sum_{t \in \calT} \bigl( c_m x_{m,t} + f_m \delta_{m,t} + h_m \, \mathrm{inv}_{m,t} \bigr)
-    \label{eq:rmp-obj-v2}\\
-    \text{s.t.} \quad
-    & \sum_{k} \lambda_k = 1 && (\mu) \label{eq:conv-v2}\\
-    & \mathrm{inv}_{m,t} = \mathrm{inv}_{m,t-1} + x_{m,t-L_m} - \sum_k \lambda_k D^k_{m,t}
-        && \forall m, t \quad (\tau_{m,t}) \label{eq:invbal-v2}\\
-    & x_{m,t} \leq U_m \, \delta_{m,t} && \forall m, t \label{eq:setup-v2}\\
-    & \mathrm{inv}_{m,0} = I_m^0 && \forall m \label{eq:init-v2}\\
-    & \lambda_k \geq 0, \; x_{m,t} \geq 0, \; \mathrm{inv}_{m,t} \geq 0
-\end{align}
-where $\gamma_k = \sum_{j} \gamma_{j, q_j^k}$ is the mode cost of column $k$
-\emph{only} (procurement cost is no longer part of $\mathrm{cost}_k$).
-During CG iterations we relax $\delta_{m,t} \in \{0,1\}$ to $\delta_{m,t} \in [0,1]$
-to obtain valid LP duals; integrality is recovered by rounding or
-branch-and-price on the final master solution.
-The dual $\tau_{m,t}$ on the inventory-balance constraint~\eqref{eq:invbal-v2}
-is now defined for \emph{every} period $t \in \calT$, not just $t < L_m$,
-giving the RL policy a dual signal across the full horizon.
-
-\paragraph{Pricing subproblem, revised.}
-\begin{equation}\label{eq:rc-v2}
-    \bar{c}_{k^*} = \gamma_{k^*} - \sum_{m,t} \tau_{m,t} \, D^{k^*}_{m,t} - \mu < 0.
-\end{equation}
-
-\paragraph{Reward decomposition, revised.}
-Substituting $D_{m,t}^k = \sum_j a_{j,m,q_j^k} \mathds{1}[s_j^k = t]$ gives
-\begin{equation}\label{eq:reward-decomp-v2}
-    -\bar{c}_k = \sum_{j \in \calJ} \Bigl(\underbrace{\sum_m \tau_{m,s_j^k} \cdot a_{j,m,q_j^k}}_{\text{procurement dual credit}} \;\underbrace{-\ \gamma_{j,q_j^k}}_{\text{mode cost}}\Bigr) + \mu.
-\end{equation}
-The step reward when task $j$ is dispatched in mode $q$ at time $s_j$ is now
-$r_t = \sum_m \tau_{m,s_j} \cdot a_{j,m,q} - \gamma_{j,q}$, absorbing the mode
-cost that was previously deferred to the terminal reward.
-Only the convexity dual $\mu$ (a constant within a CG iteration, identical
-across all columns) remains at the terminal step.
 
 
 \paragraph{Restricted Master Problem (RMP).}
@@ -711,7 +667,7 @@ The trained policy matches the optimal CG solution on benchmark instances while 
 
 % ==================================================================
 \bibliographystyle{plainnat}
-\bibliography{references}
+\bibliography{rl_pricing_references}
 
 % NOTE (Claude, 2026-07-08): The pasted source was truncated by the chat's
 % 50,000-character limit at this point, mid-way through a commented-out
