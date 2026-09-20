@@ -626,13 +626,20 @@ python exp_small_scale.py --P 3 --tasks 6 --seeds 1 --tool_purchase \
 ```
 참고 (Windows CPU, 동일 인스턴스 seed 8000): CG-RL 1613~1616, CG-heur 1638.51, 다중시작 SGS 1628~1634(0.5 s), MIP 1620.04(60 s, 미증명).
 
-#### 재개 지점 — Phase 순서는 위 "T-ASE 제출 계획" 참조
-1. **Phase 0**: 생성기 파라미터를 `Cheng-fowler-main.pdf` / `Hu at al-main.pdf` 수치로 교정. **Phase 1 전에 끝낼 것**
+#### 재개 지점 — 이 순서대로. Phase 상세는 아래 "T-ASE 제출 계획" 참조
+
+1. **W1 게이트 (가장 먼저, 30분이면 첫 신호)** — P=10/20/40에서 **다중시작 SGS가 무너지는지**.
+   `heur_multistart.multistart(inst, n_starts=...)`를 CG-RL / CG-heur와 **같은 시간 제한**으로 돌려 비교.
+   - 무너지면 → 논문 주장 확정("규모가 커질수록 규칙·무작위 기반이 무너지고 CG-RL만 버틴다"), 2번으로.
+   - 안 무너지면 → **주장을 다시 짜야 함** (아래 "W1 게이트가 실패하면" 참조: dual bound 축으로 전환).
+   - **이것을 Phase 0·1보다 먼저 하는 이유**: 결과에 따라 인스턴스 설정과 실험 구성이 달라지므로,
+     데이터를 먼저 만들면 다시 만들게 된다.
+2. **Phase 0**: 생성기 파라미터를 `Cheng-fowler-main.pdf` / `Hu at al-main.pdf` 수치로 교정. **Phase 1 전에 끝낼 것**
    (안 그러면 데이터를 두 번 만들게 됨).
-2. **Phase 1**: `python pricing_data.py --split train --n 40 --tool_purchase` /
+3. **Phase 1**: `python pricing_data.py --split train --n 40 --tool_purchase` /
    `--split val --n 10 --seed0 1000 --tool_purchase` → `python rl_pricing_trainer_batch.py --updates 2000 --batch 16 --device mps --tag tase`
-3. **먼저 볼 것 (30분)**: P=10/20에서 다중시작 SGS가 실제로 무너지는지. 무너지지 않으면 논문의 주장 자체를 다시 짜야 함.
-4. Phase 2(ablation) → 3(일반화) → 4(Tier A 마무리) → 5(대규모 표) → 6(원고).
+4. Phase 4(베이스라인 Tier A·B) → 2(ablation) → 3(일반화) → 5(대규모 표) → 6(원고).
+   **주의: Phase 4가 2·3보다 앞**이다 (3개월 일정에서 변경됨 — 주장이 확정되기 전의 ablation은 낭비).
 
 #### 주의: 옛 데이터
 `data/pricing_train.pkl`(40), `data/pricing_val.pkl`(10)은 **옛 설정**(plan_offset 1.0, tool 구매 없음)이고
