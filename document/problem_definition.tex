@@ -1,0 +1,232 @@
+% ==================================================================
+% Problem definition: MRCPSP -> Cheng et al. (2015) -> multi-project tool
+% ramp-up with replenishable non-renewable resources. \input into the main file.
+% Notation of (M3) follows code/mp_monolithic.py (periods 0..H-1, consumption
+% at task start, end-of-period inventory, orders arrive L_m periods later).
+% ==================================================================
+\providecommand{\calP}{\mathcal{P}}
+\providecommand{\calJ}{\mathcal{J}}
+\providecommand{\calQ}{\mathcal{Q}}
+\providecommand{\calR}{\mathcal{R}}
+\providecommand{\calM}{\mathcal{M}}
+\providecommand{\calN}{\mathcal{N}}
+\providecommand{\calT}{\mathcal{T}}
+
+\section{Problem Definition}\label{sec:problem}
+
+A new tool entering a fab passes through physical installation, supplier
+qualification, and company qualification before it can process production
+wafers~\citep{ieee2013semircpsp}. During a capacity ramp-up many tools go
+through this sequence at the same time, and tools of the same type follow
+essentially the same process network. The tools share contracted trades,
+supplier engineers, company qualification engineers, and metrology equipment,
+and they consume test wafers, specialty chemicals, and spare parts from a
+common stock that has to be replenished.
+
+We build the model in three steps. Section~\ref{sec:pd-mrcpsp} states the
+multi-mode resource-constrained project scheduling problem (MRCPSP).
+Section~\ref{sec:pd-cheng} adds the time-varying renewable capacities studied
+by \citet{cheng2015splitting}. Section~\ref{sec:pd-ours} extends the result to
+many projects whose non-renewable resources are replenished by orders with
+lead times.
+
+% ------------------------------------------------------------------
+\subsection{The multi-mode RCPSP}\label{sec:pd-mrcpsp}
+
+A project consists of tasks $\calJ$ with precedence arcs $E \subseteq \calJ
+\times \calJ$. Task $j$ is executed in one mode $q \in \calQ_j$, which fixes
+its processing time $p_{jq}$, its per-period requirement $k_{jqr}$ of each
+renewable resource $r \in \calR$, and its total requirement $a_{jqm}$ of each
+non-renewable resource $m \in \calN$. Renewable resource $r$ has capacity
+$K_r$ in every period; non-renewable resource $m$ has a budget $N_m$ for the
+whole project. With periods $\calT = \{0, \dots, H-1\}$, admissible start
+periods $\calT_{jq} = \{0, \dots, H - p_{jq}\}$, and binary variables
+$y_{jqt}$ equal to one if task $j$ starts in period $t$ in mode $q$, the
+time-indexed formulation~\citep{pritsker1969multiproject,talbot1982resource} is
+\begin{align}
+    \text{(M1)} \qquad \min \quad & C_{\max} \label{eq:m1-obj} \\
+    \text{s.t.} \quad
+    & \sum_{q \in \calQ_j} \sum_{t \in \calT_{jq}} y_{jqt} = 1
+      && \forall j \in \calJ \label{eq:m1-assign} \\
+    & S_j \ge C_i
+      && \forall (i,j) \in E \label{eq:m1-prec} \\
+    & C_{\max} \ge C_j
+      && \forall j \in \calJ \label{eq:m1-cmax} \\
+    & \sum_{j \in \calJ} \sum_{q \in \calQ_j} k_{jqr}
+      \sum_{\tau \in \calT_{jq} :\, \tau \le t < \tau + p_{jq}} y_{jq\tau} \le K_r
+      && \forall r \in \calR,\ t \in \calT \label{eq:m1-res} \\
+    & \sum_{j \in \calJ} \sum_{q \in \calQ_j} \sum_{t \in \calT_{jq}} a_{jqm}\, y_{jqt} \le N_m
+      && \forall m \in \calN \label{eq:m1-nonren} \\
+    & y_{jqt} \in \{0,1\}, \label{eq:m1-dom}
+\end{align}
+where
+$S_j = \sum_{q}\sum_{t \in \calT_{jq}} t\, y_{jqt}$ and
+$C_j = \sum_{q}\sum_{t \in \calT_{jq}} (t + p_{jq})\, y_{jqt}$
+denote the start and completion time of task $j$. The budget
+constraint~\eqref{eq:m1-nonren} is the only place non-renewable resources
+appear: it limits how much is consumed in total and says nothing about when.
+In the tool ramp-up setting it restricts mode choice, for example by ruling
+out assigning the wafer-hungry standard qualification mode to every tool.
+
+% ------------------------------------------------------------------
+\subsection{Time-varying capacity and activity splitting}\label{sec:pd-cheng}
+
+\citet{cheng2015splitting} generalize (M1) in two directions that matter for
+Install/Qual. First, renewable capacity varies over time, and resources may be
+unavailable altogether during vacations. In the time-indexed model this
+replaces~\eqref{eq:m1-res} by
+\begin{equation}\label{eq:m2-res}
+    \sum_{j \in \calJ} \sum_{q \in \calQ_j} k_{jqr}
+    \sum_{\tau \in \calT_{jq} :\, \tau \le t < \tau + p_{jq}} y_{jq\tau} \le K_{rt}
+    \qquad \forall r \in \calR,\ t \in \calT.
+\end{equation}
+Second, they allow \emph{non-preemptive activity splitting}: a task may be
+interrupted when a resource it needs becomes unavailable and resumed when the
+resource returns, but it may not be interrupted at will while its resources
+are available. Each activity also has a ready time and a due date, both
+imposed as hard constraints. They show that the MRCPSP with non-preemptive
+splitting generalizes the RCPSP with calendars, and they compare optimal
+makespans with and without splitting and under full preemption using a
+modified precedence-tree branch-and-bound on instances of 12 and 16
+activities. Their model keeps a budget constraint of the form~\eqref{eq:m1-nonren}
+for non-renewable resources (consumed in every period an activity is
+processed) and minimizes the makespan of a single project.
+% Checked against the paper (C&OR 53, 2015): eqs. (1)-(14) use processing
+% indicators x_jt^m and mode indicators y_j^m; (7)-(8) ready times and due
+% dates; (9) U_kt time-varying renewable limits; (10) non-renewable total over
+% all processing periods. Some 16-activity instances were not solved in 1 h.
+
+We adopt~\eqref{eq:m2-res} and do not allow splitting. Time-varying capacity
+is what makes supplier engineers realistic: a supplier assigns field engineers
+to a fab for limited periods, so a mode that needs several of them can only
+run while enough are on site, and the attractive mode of a task depends on its
+start time. Without splitting, a task cannot start if the capacity it needs is
+missing at any point of its execution.
+
+% ------------------------------------------------------------------
+\subsection{Multi-project ramp-up with replenishable resources}\label{sec:pd-ours}
+
+We extend the model of Section~\ref{sec:pd-cheng} in three ways.
+
+\paragraph{(a) Many projects.}
+Each tool is a project $p \in \calP$ with tasks $\calJ_p$ and arcs $E_p$;
+$\calJ = \bigcup_p \calJ_p$ and $p(j)$ is the project of task $j$. Project $p$
+has a release date $r_p$ (tool move-in), a due date $d_p$ (ramp target), and a
+deadline $\bar d_p$, so that
+$\calT_{jq} = \{ r_{p(j)}, \dots, \bar d_{p(j)} - p_{jq} \}$.
+Projects are coupled only through the shared resources.
+
+\paragraph{(b) Replenishable non-renewable resources.}
+The budget $N_m$ is replaced by a stock. Material $m \in \calM$ starts with
+inventory $I^0_m$; an order of $x_{mt}$ units placed in period $t$ arrives in
+period $t + L_m$; each order costs $f_m$ plus $c_m$ per unit, and each unit
+held at the end of a period costs $h_m$. A task consumes its materials when it
+starts, and it can start only if they are on hand. With demand
+\begin{equation}\label{eq:m3-demand}
+    D_{mt} = \sum_{j \in \calJ} \sum_{q \in \calQ_j :\, t \in \calT_{jq}} a_{jqm}\, y_{jqt},
+\end{equation}
+the budget constraint~\eqref{eq:m1-nonren} becomes an inventory balance
+without backlogging.
+
+\paragraph{(c) Cost objective.}
+The makespan is replaced by total cost, all in money. Project $p$ incurs a
+cost of delay $w_p$ per period beyond its due date; in a fab, $w_p$ is the
+value of the output the qualified tool would have produced, so bottleneck
+tool types carry a larger $w_p$. Modes carry direct costs $\gamma_{jq}$.
+
+\paragraph{Formulation.}
+With order indicators $\delta_{mt}$, end-of-period inventories
+$\mathrm{inv}_{mt}$, tardiness $T_p$, and
+$U_m = \sum_{j} \max_{q} a_{jqm}$,
+\begin{align}
+    \text{(M3)} \qquad \min \quad
+    & \sum_{p \in \calP} w_p T_p
+      + \sum_{j \in \calJ} \sum_{q \in \calQ_j} \sum_{t \in \calT_{jq}} \gamma_{jq}\, y_{jqt}
+      + \sum_{m \in \calM} \sum_{t \in \calT} \bigl( c_m x_{mt} + f_m \delta_{mt} + h_m\, \mathrm{inv}_{mt} \bigr)
+      \label{eq:m3-obj} \\
+    \text{s.t.} \quad
+    & \text{\eqref{eq:m1-assign}},\ \text{\eqref{eq:m2-res}} \nonumber \\
+    & S_j \ge C_i
+      && \forall p \in \calP,\ (i,j) \in E_p \label{eq:m3-prec} \\
+    & T_p \ge C_j - d_p
+      && \forall p \in \calP,\ j \in \calJ_p \label{eq:m3-tard} \\
+    & \mathrm{inv}_{mt} = \mathrm{inv}_{m,t-1} + x_{m,t-L_m} - D_{mt}
+      && \forall m \in \calM,\ t \in \calT \label{eq:m3-inv} \\
+    & x_{mt} \le U_m\, \delta_{mt}
+      && \forall m \in \calM,\ t \in \calT \label{eq:m3-setup} \\
+    & \mathrm{inv}_{m,-1} = I^0_m; \quad x_{mt} = 0 \ \text{ if } t < 0 \text{ or } t > H - 1 - L_m
+      && \forall m \in \calM \label{eq:m3-init} \\
+    & y_{jqt},\, \delta_{mt} \in \{0,1\}, \quad x_{mt} \in \mathbb{Z}_{\ge 0}, \quad
+      \mathrm{inv}_{mt},\, T_p \ge 0. \label{eq:m3-dom}
+\end{align}
+Constraint~\eqref{eq:m2-res} now sums over the tasks of all projects and is
+where the tools compete for engineers, trades, and metrology.
+Constraints~\eqref{eq:m3-inv}--\eqref{eq:m3-init} describe the shared stock:
+demand in periods $t < L_m$ can only be met from $I^0_m$, and later demand
+from $I^0_m$ or from orders placed at least $L_m$ periods before. The
+deadlines $\bar d_p$ bound each task's start window and keep the number of
+variables proportional to the window rather than to $H$.
+
+Table~\ref{tab:pd-compare} summarizes how the three models and the closest
+multi-project model with material ordering~\citep{hu2025supplier} differ.
+
+\begin{table}[t]
+\centering
+\caption{Model features. (M1): MRCPSP; \citet{cheng2015splitting}; \citet{hu2025supplier}; (M3): this paper.}
+\label{tab:pd-compare}
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Feature & (M1) & Cheng et al. & Hu et al. & (M3) \\
+\midrule
+Multiple modes                          & \checkmark & \checkmark &            & \checkmark \\
+Time-varying renewable capacity         &            & \checkmark &            & \checkmark \\
+Non-preemptive activity splitting       &            & \checkmark &            &            \\
+Activity ready times and due dates      &            & \checkmark &            &            \\
+Multiple projects                       &            &            & \checkmark & \checkmark \\
+Renewable resources shared across projects &         &            &            & \checkmark \\
+Non-renewable: total budget             & \checkmark & \checkmark &            &            \\
+Non-renewable: timed stock, orders, lead times & &            & \checkmark & \checkmark \\
+Material stock shared across projects   &            &            &            & \checkmark \\
+Time-varying supplier (material) capacity &          &            & \checkmark &            \\
+Supplier selection                      &            &            & \checkmark &            \\
+Objective                               & makespan   & makespan   & cost       & cost \\
+Delay term                              &            &            & project duration & tardiness vs.\ due date \\
+Solution method                         &            & B\&B       & heuristic  & B\&P \\
+\bottomrule
+\end{tabular}
+% Hu et al. column checked against C&OR 188 (2026) 107362, eqs. (1)-(12):
+% single mode (x_jt^p, fixed D_pj); renewable R_pk and inventory I_pmt are per
+% project ("local resources, precluding inter-project transfer"); projects are
+% coupled only through supplier capacity C_st; materials consumed every period
+% of processing; objective w_p * completion + ordering + purchase + holding.
+\end{table}
+
+\paragraph{Relation between the budget and the stock.}
+If no order can arrive within the horizon ($L_m \ge H$) and $h_m = 0$, every
+$x_{mt}$ is zero and inventory only decreases, so~\eqref{eq:m3-inv} with
+$\mathrm{inv}_{mt} \ge 0$ is equivalent to
+$\sum_{j}\sum_{q}\sum_{t} a_{jqm}\, y_{jqt} \le I^0_m$, which
+is~\eqref{eq:m1-nonren} with $N_m = I^0_m$. The budget of (M1) is therefore
+the special case of (M3) in which replenishment is impossible. Once orders are
+possible, the consumption time matters: the same total usage can be feasible
+or infeasible, cheap or expensive, depending on when the tasks start.
+
+\paragraph{Procurement for a fixed schedule.}
+When $y$ is fixed, the demands $D_{mt}$ are data and the rest of (M3)
+separates by material into uncapacitated single-item lot-sizing problems with
+a lead time and initial stock, each solved exactly by the algorithm of
+\citet{wagner1958dynamic}. The difficulty lies in the coupling: the schedule
+determines when materials are needed, and the cost of meeting those needs
+determines which schedule is best.
+
+\paragraph{Assumptions.}
+Durations, requirements, capacities, and lead times are deterministic. Tasks
+are non-preemptive and not split. Orders are not limited by supplier capacity.
+
+\paragraph{Size.}
+(M3) has $\sum_{j}\sum_{q} |\calT_{jq}|$ binary scheduling variables and
+$O(|\calM| H)$ procurement variables. Both grow with the number of tools, and
+the monolithic model becomes hard to solve well before realistic ramp-up
+sizes (Section~\ref{sec:experiments}). Section~\ref{sec:method} decomposes it
+by project.
