@@ -637,3 +637,52 @@ python exp_small_scale.py --P 3 --tasks 6 --seeds 1 --tool_purchase \
 #### 주의: 옛 데이터
 `data/pricing_train.pkl`(40), `data/pricing_val.pkl`(10)은 **옛 설정**(plan_offset 1.0, tool 구매 없음)이고
 `pricer_*.pt` 체크포인트도 전부 그 데이터로 학습된 것. 새 형식으로 로드는 되지만(하위 호환) **Phase 1에서 재생성 대상**.
+
+### 3개월 일정 (2026-09-19 ~ 약 2026-12-19)
+
+**계획 변경 (중요): Phase 4(베이스라인)를 Phase 2·3 앞으로 옮김.** 다중시작 SGS가 P=3에서 CG-heur를 이긴 이상,
+**논문의 주장이 확정되기 전에 ablation을 돌리는 건 낭비**다. 베이스라인이 규모에서 무너지는지를 먼저 확정하고,
+그 다음에 "왜 우리 것이 버티는가"를 ablation으로 뒷받침하는 순서가 맞다.
+
+| 주차 | 작업 | 산출물 |
+|---|---|---|
+| **W1** | **게이트**: P=10/20/40에서 다중시작 SGS가 무너지는가 (30분이면 첫 신호) → Phase 0 파라미터 교정 → Phase 1 데이터 재생성 + 재학습 | 주장 확정, 새 체크포인트 |
+| **W2-3** | **Phase 4**: Tier A(다중시작 SGS 모듈화 + forward-backward improvement + 동일 시간 제한) / Tier B(activity-list GA) | `heur_multistart.py`, `heur_ga.py` |
+| **W4** | Phase 2 ablation (anchor, S, reward, baseline, feature) — **downstream CG LP까지 보고** | ablation 표 |
+| **W5** | Phase 3 일반화 (크기·작업수 zero-shot, 분포 이동, 시나리오 교차) | 일반화 표 |
+| **W6-7** | Phase 5 대규모 표 (P=5/10/20/40, 크기당 10+ 인스턴스, 6개 방법) + **재실행 여유** | 주 실험 표 |
+| **W8-11** | 원고 집필 (IEEE 양식 + Note to Practitioners) | 초고 |
+| **W12** | 내부 검토 / 공저자 피드백 반영, 참고문헌 정리 | 수정고 |
+| **W13** | 버퍼 + 제출 | 제출 |
+
+- 3개월은 **W1 게이트만 통과하면 여유 있음**. 집필 4주를 확보한 게 핵심.
+- 대규모 실험(W6-7)에 1주 여유를 둔 이유: 옛 경험상 설정이 바뀌면 표를 다시 돌리게 됨.
+
+#### W1 게이트가 실패하면 (다중시작이 규모에서도 버티면)
+주장을 바꿔야 하고, 그 대안은 이미 있음:
+- **CG만 dual bound를 준다.** 다중시작 SGS·GA는 해만 내놓고 품질 보증이 없다. CG-RL은 LP bound를 함께 주므로
+  "이 해가 최적에서 x% 이내"를 말할 수 있다. 의사결정 지원 맥락(T-ASE)에서 이건 실질적 차별점이고,
+  **게이트 결과와 무관하게 항상 참이므로 지금부터 전면에 세워도 됨.**
+- 부차: 시간 제한을 조일수록(실무 조건) CG-RL이 유리한 구간이 있는지 측정.
+
+### Git / GitHub 상태 (2026-09-19 세션 종료)
+
+- 저장소: `https://github.com/jlee-105/RL-PRICING.git` (**private**), 브랜치 `main`.
+- 이 프로젝트 폴더는 이번 세션에 처음 `git init` 했고, 원격에는 이미 **초고 3커밋**이 있었음 → 이력이 무관해
+  `--allow-unrelated-histories`로 병합. **경로가 안 겹쳐 충돌 0, 로컬 파일 변경 0.**
+- 커밋 작성자는 이 저장소에만 `Jaejin Lee <jlee105@asu.edu>`로 설정 (전역 Intel 주소는 그대로 둠).
+- `.gitignore` 제외 대상: 논문 PDF(저작권), `code/data/`(17MB, 재생성 가능), `code/logs/`, `*.pt`.
+  → **MacBook에서 clone하면 데이터·체크포인트는 없음. Phase 1에서 어차피 재생성하므로 정상.**
+
+#### 원고 파일이 두 벌 존재 (Phase 6 전에 정리 필요)
+원격 초고가 합쳐지면서 `.tex`와 `.bib`가 각각 두 벌이 됨. **덮어쓰지 않고 공존시킨 상태** (사용자 지시: 원격 초고 삭제하지 말 것).
+
+| 원격에서 온 것 (루트) | 로컬에 있던 것 |
+|---|---|
+| `RL_CG_paper.tex` (681줄) | `document/RL_PRICING.tex` |
+| `references.bib` (148줄) | `document/rl_pricing_references.bib` |
+| `RL_CG.md` (198줄), `README.md` | `document/CG_RL_PLAN.md`, `document/FORMULATIONS.md` |
+
+- 원격 마지막 커밋이 "Fix RMP formulation duplication and placeholder values"이므로 **원격 `.tex` 쪽이 더 최신일 가능성 있음**.
+- `document/REFERENCES_TODO.md`의 "bib 누락 19개"가 **원격 `references.bib`에 이미 들어있을 수 있음** — 중복 작업 방지를 위해 먼저 대조할 것.
+- **Phase 6 착수 시 첫 작업**: 두 `.tex`, 두 `.bib` 대조 → 본체 하나 결정 → 나머지 병합 후 정리. T-ASE는 IEEE 양식이므로 어차피 재구성 필요.
