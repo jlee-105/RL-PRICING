@@ -674,15 +674,16 @@ python exp_small_scale.py --P 3 --tasks 6 --seeds 1 --tool_purchase \
 - `.gitignore` 제외 대상: 논문 PDF(저작권), `code/data/`(17MB, 재생성 가능), `code/logs/`, `*.pt`.
   → **MacBook에서 clone하면 데이터·체크포인트는 없음. Phase 1에서 어차피 재생성하므로 정상.**
 
-#### 원고 파일이 두 벌 존재 (Phase 6 전에 정리 필요)
-원격 초고가 합쳐지면서 `.tex`와 `.bib`가 각각 두 벌이 됨. **덮어쓰지 않고 공존시킨 상태** (사용자 지시: 원격 초고 삭제하지 말 것).
+#### 원고 파일이 두 벌 존재 — **로컬이 본체 (결정됨)**
+원격 초고가 합쳐지면서 `.tex`와 `.bib`가 각각 두 벌이 됨. 덮어쓰지 않고 공존시킨 상태.
 
-| 원격에서 온 것 (루트) | 로컬에 있던 것 |
+| 상태 | 파일 |
 |---|---|
-| `RL_CG_paper.tex` (681줄) | `document/RL_PRICING.tex` |
-| `references.bib` (148줄) | `document/rl_pricing_references.bib` |
-| `RL_CG.md` (198줄), `README.md` | `document/CG_RL_PLAN.md`, `document/FORMULATIONS.md` |
+| **본체 (로컬, 우선)** | `document/RL_PRICING.tex`, `document/rl_pricing_references.bib`, `document/problem_definition.tex`, `document/FORMULATIONS.md`, `document/CG_RL_PLAN.md`, `document/REFERENCES_TODO.md` |
+| 참고용 (원격 초고, 루트) | `RL_CG_paper.tex`, `references.bib`, `RL_CG.md`, `README.md` |
 
-- 원격 마지막 커밋이 "Fix RMP formulation duplication and placeholder values"이므로 **원격 `.tex` 쪽이 더 최신일 가능성 있음**.
-- `document/REFERENCES_TODO.md`의 "bib 누락 19개"가 **원격 `references.bib`에 이미 들어있을 수 있음** — 중복 작업 방지를 위해 먼저 대조할 것.
-- **Phase 6 착수 시 첫 작업**: 두 `.tex`, 두 `.bib` 대조 → 본체 하나 결정 → 나머지 병합 후 정리. T-ASE는 IEEE 양식이므로 어차피 재구성 필요.
+- **사용자 결정 (2026-09-19): 로컬 원고를 우선한다.** 원격 초고는 삭제하지 않고 **참고용으로만** 둔다.
+  Phase 6 원고는 `document/` 쪽을 기반으로 쓰고, 루트의 원격 초고는 필요한 내용이 있을 때만 골라 가져온다.
+- 원격 초고를 "어느 쪽이 최신인가"로 저울질하지 말 것 — 그 판단은 이미 끝났다. 로컬이 본체.
+- 단 하나 확인할 가치가 있는 것: `document/REFERENCES_TODO.md`의 **"bib 누락 19개"가 루트 `references.bib`에 있는지**.
+  있으면 그 항목만 `document/rl_pricing_references.bib`로 가져오면 되므로 중복 작업을 피할 수 있다. (내용 이전일 뿐, 본체가 바뀌는 게 아님.)
