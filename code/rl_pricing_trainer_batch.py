@@ -192,6 +192,7 @@ def main():
     n_anchor = len(ANCHOR_NAMES)
     ckpt = Path(__file__).parent / f"pricer_{args.tag}.pt"
 
+    best_gap = float("inf")
     snapshots, hard_pool = [], []
     if args.curriculum == "bo":
         import bo_curriculum as BO
@@ -222,9 +223,14 @@ def main():
             ev = evaluate(policy, val, n_anchor, args.S, args.device, rng_t)
             print(f"  EVAL u {u}: " + "  ".join(f"{k}: gap {v['gap']:.3f} neg {v['neg_found']:.2f}"
                                                 for k, v in ev.items()), flush=True)
-            torch.save({"state": policy.state_dict(), "args": vars(args), "update": u, "eval": ev}, ckpt)
-    torch.save({"state": policy.state_dict(), "args": vars(args), "update": args.updates}, ckpt)
-    print(f"saved {ckpt.name}", flush=True)
+            if ev["rl"]["gap"] < best_gap:
+                best_gap = ev["rl"]["gap"]
+                torch.save({"state": policy.state_dict(), "args": vars(args), "update": u,
+                            "eval": ev}, ckpt)
+                print(f"  saved {ckpt.name} (best rl gap {best_gap:.3f})", flush=True)
+    last = ckpt.with_name(f"{ckpt.stem}_last.pt")
+    torch.save({"state": policy.state_dict(), "args": vars(args), "update": args.updates}, last)
+    print(f"best rl gap {best_gap:.3f} in {ckpt.name}; final weights in {last.name}", flush=True)
 
 
 if __name__ == "__main__":

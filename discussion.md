@@ -694,3 +694,108 @@ python exp_small_scale.py --P 3 --tasks 6 --seeds 1 --tool_purchase \
 - 원격 초고를 "어느 쪽이 최신인가"로 저울질하지 말 것 — 그 판단은 이미 끝났다. 로컬이 본체.
 - 단 하나 확인할 가치가 있는 것: `document/REFERENCES_TODO.md`의 **"bib 누락 19개"가 루트 `references.bib`에 있는지**.
   있으면 그 항목만 `document/rl_pricing_references.bib`로 가져오면 되므로 중복 작업을 피할 수 있다. (내용 이전일 뿐, 본체가 바뀌는 게 아님.)
+
+## 2026-09-20 (MacBook 세션, 기록은 2026-09-22 작성)
+
+**요약: 새 MacBook 환경에서 처음부터 파이프라인을 세우고, "다음에 할 일 (갱신)" 1번(데이터 재생성 +
+RL 재학습)을 완료했다. 학습된 pricer가 규칙 기반 anchor를 확실히 앞선다 (val gap 0.414 vs 0.539).**
+**단, 이 머신의 GPU(Apple MPS)는 이 워크로드에 쓸모가 없다. 학습은 CPU로 했다.**
+
+### 환경 구축 — clone 직후 상태에서 시작
+- GitHub clone본이라 `.gitignore`대로 `code/data/`, `code/logs/`, `*.pt`, `*.pdf`가 전부 없음 (예상된 상태).
+  → 모든 `verify_*.py`가 `pricing_val.pkl`을 읽으므로 **검증조차 데이터 생성 전에는 돌지 않는다.**
+- 의존성: `torch 2.8.0`, `numpy`, `scipy`, `PySCIPOpt`는 이미 설치돼 있었고 **`ortools`, `scikit-learn`이 없어 설치**함.
+  `requirements.txt`가 없으므로 import에서 역추적해야 했다. (만들 가치 있음.)
+- Python은 시스템 프레임워크 3.13 (`/usr/local/bin/python3`), venv 없음.
+
+### GPU 결론 — **MPS는 이 워크로드에 이득이 없다 (중요)**
+이 MacBook은 **Apple M4 Pro (12코어: 성능 8 + 효율 4), CUDA 없음, MPS만 가능**.
+`torch.cuda.is_available()` = False, `torch.backends.mps.is_available()` = True.
+워밍업 후 동일 롤아웃으로 측정 (CP-SAT 샤드가 코어를 쓰는 중이라 **CPU에 불리한 조건**인데도 CPU 승):
+
+| 문제 수 | 환경 수 | CPU | MPS | 결과 |
+|---|---|---|---|---|
+| 16 (기본 batch) | 64 | 0.30 s | 1.00 s | CPU 3.4x |
+| 64 | 256 | 0.95 s | 1.58 s | CPU 1.7x |
+| 64 | 512 | 1.75 s | 2.34 s | CPU 1.3x |
+| 256 | 2048 | 4.82 s | 6.57 s | CPU 1.36x |
+| 450 | 3600 | — | **OOM (29 GiB 할당 후 실패)** | MPS 불가 |
+
+- 원인: hidden=64로 모델이 작고 롤아웃이 순차적이라 **작은 커널이 수천 번 발행**된다. MPS는 커널 발행
+  오버헤드가 커서 이득이 상쇄되고, 배치를 키워 오버헤드를 상쇄하려 하면 **메모리가 먼저 터진다**.
+- **`discussion.md`의 "GPU 0.195 s/update"는 CUDA 머신 값이다. 이 Mac에서는 재현되지 않는다.**
+  MacBook에서의 실측은 **CPU 0.36~0.40 s/update** (CUDA의 약 2배, 실용적으로 충분).
+- → **MacBook에서는 `--device cpu`를 쓸 것.** GPU 이득을 보려면 CUDA 머신이어야 한다.
+
+### 데이터 생성 — 샤딩으로 10시간 → 84분
+- 실측 비용 (`tool_purchase`, 발주 후보 5개):
+
+  | 설정 | CG 반복 1회 | 인스턴스 1개(30반복) |
+  |---|---|---|
+  | P=3, J=8 | 6.7 s (15 solves) | ~3.3 분 |
+  | P=6, J=10 | 27.6 s (30 solves) | ~13.8 분 |
+  | P=3, J=8, `plan_offset`만 | 0.5 s (3 solves) | ~0.3 분 |
+
+  → 50 인스턴스 순차 생성은 **약 10시간**. 이건 CP-SAT(CPU) 비용이라 **GPU와 무관**하다.
+- **CP-SAT는 스레드를 늘려도 거의 안 빨라진다**: 8스레드 0.80 s/solve vs 1스레드 1.09 s/solve (겨우 1.36x).
+  → **1스레드 프로세스를 여러 개 띄우는 쪽이 압도적으로 유리** (프로세스 병렬 > CP-SAT 내부 병렬).
+- 10샤드 병렬 (train 8샤드 x 5, val 2샤드 x 5), 각 `--pricing_workers 1`:
+  **21:35 → 22:59, 84분, 오류 0건.** 예측한 ~7배 단축과 일치.
+- 산출: `pricing_train.pkl` **40 인스턴스 / 26,320 pricing 문제**, `pricing_val.pkl` **10 / 6,900**.
+
+### 코드 변경 4건 (이 환경에서 돌리려면 필요했던 것)
+1. **`pricing_data.py` `--out`** — 출력 파일명 지정. 기존엔 `pricing_<split>.pkl` 고정이라 **병렬 샤드가 서로 덮어썼다.**
+2. **`pricing_data.py` `--pricing_workers`** (기본 8, 기존 동작 유지) — `cg_snapshots`가 `price_exact`에
+   스레드 수를 전달. 샤딩할 때 1로 준다.
+3. **`merge_shards.py` (신규)** — 샤드를 트레이너가 읽는 단일 파일로 병합. seed 중복이면 거부.
+4. **`rl_pricing_trainer_batch.py` — 검증 최고점 보존 (실질적 버그 수정)**.
+   기존엔 eval마다 덮어쓰고 **마지막에 최종 가중치로 무조건 재덮어써서 best를 버렸다.**
+   과적합이 관측된 이력(600 update 이후)을 감안하면 긴 학습이 통째로 낭비되는 구조.
+   → 이제 `ev["rl"]["gap"]` 기준 best만 `pricer_<tag>.pt`에, 최종 가중치는 `pricer_<tag>_last.pt`에 따로 저장.
+   **이번 run에서 바로 효과를 봤다: best 0.414(u1800) vs 최종 0.431(u2000).**
+
+### 검증 — 통과
+`verify_batch_env.py`: 시작시각 차 0, step reward 차 6.8e-05, terminal/dead 불일치 0. 배치 0.07 s vs 스칼라 0.19 s.
+`verify_batch_obs.py`: x 0, feats 4.8e-07, g 9.5e-07, logits 2.4e-07.
+
+### 학습 결과 — `pricer_tase.pt` (목록 1번 완료)
+`python3 rl_pricing_trainer_batch.py --updates 2000 --batch 16 --device cpu --tag tase --eval_every 100 --eval_problems 256`
+(로그: `logs/train_tase.log`, 약 15분, 0.398 s/update)
+
+| update | 100 | 300 | 500 | 900 | 1200 | **1800 (best)** | 2000 |
+|---|---|---|---|---|---|---|---|
+| rl gap | 0.527 | 0.444 | 0.430 | 0.422 | 0.421 | **0.414** | 0.431 |
+| heur gap | 0.539 | 0.537 | 0.538 | 0.539 | 0.539 | 0.539 | 0.539 |
+
+- **u100부터 이미 heur를 앞선다.** 이후 완만하게 개선되다 u1200~1800에서 0.41대로 수렴, u1900~2000에서 다시 악화.
+  → 예전에 관측된 "후반 악화" 경향이 이 설정에서도 재현됨 (다만 이번엔 완만).
+- `neg_found`는 rl/heur 모두 1.00 — 음의 reduced cost column은 항상 찾는다. **변별력은 gap에만 있다.**
+- 체크포인트: **`pricer_tase.pt` (best, u1800, gap 0.414)**, `pricer_tase_last.pt` (u2000, 참고용).
+
+### 이번 세션에서 **하지 않은** 것 (주의)
+- **Phase 0 (문헌 기반 생성기 파라미터 교정) 생략.** 근거 PDF(`Cheng-fowler-main.pdf`, `Hu at al-main.pdf`)가
+  `.gitignore`(`*.pdf`)로 빠져 **이 환경에 없다.** 따라서 이번 데이터는 **생성기 기본값** 기준이다.
+  계획상 Phase 0은 Phase 1보다 먼저여야 하므로, **교정을 하기로 하면 데이터를 다시 만들어야 한다.**
+  (PDF를 MacBook으로 옮기는 것이 선행 조건.)
+- **소규모 검증 실험(MIP/CG-exact/CG-heur/CG-RL) 미실행.** 학습만 끝난 상태이고, 학습된 pricer가
+  **CG 안에서** 실제로 이득인지는 아직 확인 안 됨. (pricing gap과 CG 성능이 따로 논 전례가 있으므로 중요.)
+- 대규모 실험(Phase 5), ablation(Phase 2), 일반화(Phase 3), 원고(Phase 6), 참고문헌 — 전부 미착수.
+
+### 다음에 할 일 (2026-09-20 기준 갱신)
+1. **소규모 검증 실험** — 학습된 pricer가 CG 안에서 이득인지 먼저 확인. 이게 되어야 나머지가 의미 있다.
+   `python3 exp_small_scale.py --P 3 --tasks 6 --seeds 3 --tool_purchase --mip_limit 300 --cg_limit 300 \
+    --methods MIP CG-exact CG-heur CG-RL --ckpt pricer_tase.pt --device cpu`
+   (주의: `exp_*.py`의 `--device` 기본값이 cuda-if-available이므로 **MacBook에서는 cpu를 명시**할 것.)
+2. **Phase 0 판단** — PDF를 옮겨와 생성기를 교정할지, 아니면 기본값으로 밀고 갈지 결정.
+   교정한다면 데이터 재생성 + 재학습(합쳐서 약 100분)을 다시 해야 한다.
+3. Phase 2 ablation / Phase 3 일반화 — CPU로도 update당 0.4초면 충분히 돌릴 수 있다.
+4. Phase 4 베이스라인 보강(SGS multistart, GA) → Phase 5 대규모 표 → Phase 6 원고.
+5. 참고문헌 (`document/REFERENCES_TODO.md`).
+
+### MacBook 재개 시 알아둘 것
+- **`--device cpu`를 쓸 것** (MPS는 느리고 OOM). `discussion.md` 곳곳의 `--device cuda`는 이 머신에서 무효.
+- 데이터를 다시 만들 때는 **반드시 샤딩**할 것 (안 하면 10시간):
+  `for s0 in 0 5 10 15 20 25 30 35; do python3 pricing_data.py --split train --n 5 --seed0 $s0 \
+   --tool_purchase --pricing_workers 1 --out pricing_train_s${s0}.pkl & done`
+  이후 `python3 merge_shards.py --split train` (val은 seed0 1000, 1005로 2샤드).
+- `requirements.txt`가 없어 새 환경마다 의존성을 역추적해야 한다. 필요한 것: `torch numpy scipy ortools PySCIPOpt scikit-learn`.

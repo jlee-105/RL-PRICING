@@ -23,7 +23,8 @@ from mp_cg import (initial_columns, solve_master, price_exact, reduced_cost, mak
 DATA_DIR = Path(__file__).parent / "data"
 
 
-def cg_snapshots(inst, max_iters: int = 30, pricing_tl: float = 5.0, log=None):
+def cg_snapshots(inst, max_iters: int = 30, pricing_tl: float = 5.0, log=None,
+                 pricing_workers: int = 8):
     """One pricing problem per (iteration, project, candidate tool-order period).
 
     With a capex budget the order period is part of the column, so CG prices each project over a
@@ -47,7 +48,8 @@ def cg_snapshots(inst, max_iters: int = 30, pricing_tl: float = 5.0, log=None):
             recs = []
             for o in cands[p]:
                 col, lb, proven = price_exact(shift_project(inst, p, o), p,
-                                              m["pi"], m["beta"], m["mu"], pricing_tl)
+                                              m["pi"], m["beta"], m["mu"], pricing_tl,
+                                              num_workers=pricing_workers)
                 full = make_column(inst, p, col.starts, col.modes, order=o)
                 rc_full = reduced_cost(full, m["pi"], m["beta"], m["mu"], eta)
                 rc = reduced_cost(full, m["pi"], m["beta"], m["mu"]) - full.capex
@@ -75,8 +77,15 @@ def main():
     ap.add_argument("--seed0", type=int, default=0)
     ap.add_argument("--plan_offset", type=float, default=1.0)
     ap.add_argument("--tool_purchase", action="store_true")
+    ap.add_argument("--pricing_workers", type=int, default=8,
+                    help="CP-SAT threads per exact pricing solve. Use 1 when running "
+                         "several shards at once.")
+    ap.add_argument("--out", default=None,
+                    help="output filename inside data/; defaults to pricing_<split>.pkl. "
+                         "Set it to shard generation across processes.")
     args = ap.parse_args()
     DATA_DIR.mkdir(exist_ok=True)
+    out_name = args.out or f"pricing_{args.split}.pkl"
     rng = random.Random(args.seed0)
     out = []
     t0 = time.time()
@@ -86,13 +95,14 @@ def main():
                    num_templates=rng.randint(2, 3), tool_unary=rng.choice(["qual", "qual", "none"]),
                    plan_offset=args.plan_offset, tool_purchase=args.tool_purchase, seed=seed)
         inst = generate_multiproject_instance(**cfg)
-        snaps = cg_snapshots(inst, log=lambda s: print(s, flush=True))
+        snaps = cg_snapshots(inst, log=lambda s: print(s, flush=True),
+                             pricing_workers=args.pricing_workers)
         out.append({"cfg": cfg, "inst": inst, "snaps": snaps})
         n_prob = sum(len(recs) for s in snaps for recs in s["exact"])
         print(f"[{k + 1}/{args.n}] seed={seed} P={cfg['num_projects']} J={cfg['tasks_per_project']} "
               f"tool={cfg['tool_unary']} iters={len(snaps)} problems={n_prob} "
               f"elapsed={time.time() - t0:.0f}s", flush=True)
-        with open(DATA_DIR / f"pricing_{args.split}.pkl", "wb") as f:   # save as we go
+        with open(DATA_DIR / out_name, "wb") as f:   # save as we go
             pickle.dump(out, f)
     print("done", flush=True)
 
